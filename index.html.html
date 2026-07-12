@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>加密貨幣多空技術指標儀表板</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card-bg: #171a21;
+    --card-border: #262b35;
+    --text: #e6e8eb;
+    --text-dim: #8a8f98;
+    --strong-long: #16c784;
+    --long: #4f9d74;
+    --neutral: #6b7280;
+    --short: #d9635f;
+    --strong-short: #ea3943;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    padding: 24px;
+  }
+  header {
+    max-width: 1200px;
+    margin: 0 auto 20px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 6px;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .disclaimer {
+    background: #1c1f27;
+    border: 1px solid #2e3341;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    color: #c9a227;
+    line-height: 1.6;
+  }
+  .controls {
+    max-width: 1200px;
+    margin: 16px auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  button.refresh-btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.refresh-btn:hover { background: #1d4ed8; }
+  button.refresh-btn:disabled { background: #374151; cursor: default; }
+
+  .grid {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 18px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .coin-name { font-weight: 600; font-size: 16px; }
+  .coin-ticker { color: var(--text-dim); font-size: 12px; }
+  .price-block { text-align: right; }
+  .price { font-size: 18px; font-weight: 600; }
+  .change { font-size: 12.5px; }
+  .change.up { color: var(--strong-long); }
+  .change.down { color: var(--strong-short); }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .tab-btn {
+    flex: 1;
+    background: #1e222b;
+    border: 1px solid #2a2f3a;
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 6px 4px;
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .tab-btn.active {
+    background: #2a2f3a;
+    color: var(--text);
+    border-color: #3a4152;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 8px;
+  }
+  .badge.strong-long { background: var(--strong-long); }
+  .badge.long { background: var(--long); }
+  .badge.neutral { background: var(--neutral); }
+  .badge.short { background: var(--short); }
+  .badge.strong-short { background: var(--strong-short); }
+
+  .score-bar-track {
+    height: 6px;
+    background: #262b35;
+    border-radius: 4px;
+    margin: 6px 0 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .score-bar-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: linear-gradient(90deg, var(--strong-short), var(--neutral), var(--strong-long));
+    width: 100%;
+  }
+  .score-bar-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    background: white;
+  }
+
+  .indicator-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 12.5px;
+  }
+  .indicator-list li {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid #21252e;
+    line-height: 1.5;
+  }
+  .ind-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+  .ind-dot.pos { background: var(--strong-long); }
+  .ind-dot.neg { background: var(--strong-short); }
+  .ind-dot.flat { background: var(--neutral); }
+  .ind-name { color: var(--text-dim); min-width: 128px; flex-shrink: 0; }
+  .ind-desc { color: var(--text); }
+
+  .tf-note { color: var(--text-dim); font-size: 11.5px; margin: -6px 0 10px; }
+  .card-footer {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+  }
+  .loading, .error-box {
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 20px 0;
+    text-align: center;
+  }
+  .error-box { color: var(--strong-short); }
+  .tf-panel { display: none; }
+  .tf-panel.active { display: block; }
+
+  footer {
+    max-width: 1200px;
+    margin: 26px auto 0;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    text-align: center;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>加密貨幣多空技術指標儀表板</h1>
+  <div class="subtitle">BTC・ETH・SOL・XRP・DOGE — 短期 / 中期 / 長期 綜合技術訊號</div>
+  <div class="disclaimer">
+    ⚠️ 本頁面所有訊號皆由公開歷史K線數據透過技術指標公式自動計算產生，僅供技術分析參考與教育用途，<b>不構成任何投資建議</b>。
+    加密貨幣價格波動劇烈，過去表現不代表未來結果，請自行判斷風險並謹慎決策。
+  </div>
+</header>
+
+<div class="controls">
+  <button class="refresh-btn" id="refreshBtn">立即重新整理</button>
+  <span id="statusText">尚未載入</span>
+  <span id="countdownText"></span>
+</div>
+
+<main class="grid" id="grid"></main>
+
+<footer>
+  資料來源：Binance 公開行情 API（klines / 24hr ticker）｜ 短期＝4小時線・中期＝日線・長期＝週線<br/>
+  指標：EMA20/50 均線交叉、RSI(14)、MACD(12,26,9)、布林通道(20,2)、支撐壓力位(SNR)、簡化版市場結構(SMC：HH/HL、LH/LL、BOS/CHoCH)<br/>
+  自動每 5 分鐘重新整理一次資料
+</footer>
+
+<script>
+// ===================== 技術指標計算核心 =====================
+function sma(values, period) {
+  const out = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function ema(values, period) {
+  const k = 2 / (period + 1);
+  const out = new Array(values.length).fill(null);
+  let prevEma = null;
+  for (let i = 0; i < values.length; i++) {
+    if (i < period - 1) continue;
+    if (i === period - 1) {
+      const seed = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      out[i] = seed;
+      prevEma = seed;
+      continue;
+    }
+    const val = values[i] * k + prevEma * (1 - k);
+    out[i] = val;
+    prevEma = val;
+  }
+  return out;
+}
+
+function rsi(closes, period = 14) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length <= period) return out;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  let avgGain = gains / period, avgLoss = losses / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+function macd(closes, fast = 12, slow = 26, signalPeriod = 9) {
+  const emaFast = ema(closes, fast);
+  const emaSlow = ema(closes, slow);
+  const macdLine = closes.map((_, i) =>
+    emaFast[i] != null && emaSlow[i] != null ? emaFast[i] - emaSlow[i] : null
+  );
+  const macdValues = macdLine.filter((v) => v != null);
+  const signalRaw = ema(macdValues, signalPeriod);
+  const signalLine = new Array(closes.length).fill(null);
+  let sIdx = 0;
+  for (let i = 0; i < closes.length; i++) {
+    if (macdLine[i] != null) {
+      signalLine[i] = signalRaw[sIdx];
+      sIdx++;
+    }
+  }
+  const hist = closes.map((_, i) =>
+    macdLine[i] != null && signalLine[i] != null ? macdLine[i] - signalLine[i] : null
+  );
+  return { macdLine, signalLine, hist };
+}
+
+function bollinger(closes, period = 20, mult = 2) {
+  const mid = sma(closes, period);
+  const upper = new Array(closes.length).fill(null);
+  const lower = new Array(closes.length).fill(null);
+  for (let i = period - 1; i < closes.length; i++) {
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean = mid[i];
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period;
+    const std = Math.sqrt(variance);
+    upper[i] = mean + mult * std;
+    lower[i] = mean - mult * std;
+  }
+  return { mid, upper, lower };
+}
+
+function findPivots(candles, left = 3, right = 3) {
+  const highs = [], lows = [];
+  for (let i = left; i < candles.length - right; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i) continue;
+      if (candles[j].high >= candles[i].high) isHigh = false;
+      if (candles[j].low <= candles[i].low) isLow = false;
+    }
+    if (isHigh) highs.push({ index: i, price: candles[i].high });
+    if (isLow) lows.push({ index: i, price: candles[i].low });
+  }
+  return { highs, lows };
+}
+
+function lastValid(arr) {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i] != null && !Number.isNaN(arr[i])) return arr[i];
+  }
+  return null;
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function maScore(closes) {
+  if (closes.length < 50) return { score: 0, desc: '資料不足，無法判斷均線' };
+  const e20 = lastValid(ema(closes, 20));
+  const e50 = lastValid(ema(closes, 50));
+  if (e20 == null || e50 == null) return { score: 0, desc: '資料不足，無法判斷均線' };
+  const diffPct = (e20 - e50) / e50;
+  const score = clamp(diffPct * 15, -1, 1);
+  const desc =
+    e20 > e50
+      ? `EMA20(${e20.toFixed(2)}) 上穿 EMA50(${e50.toFixed(2)})，偏多排列`
+      : `EMA20(${e20.toFixed(2)}) 下穿 EMA50(${e50.toFixed(2)})，偏空排列`;
+  return { score, desc };
+}
+
+function rsiScore(closes) {
+  const r = lastValid(rsi(closes, 14));
+  if (r == null) return { score: 0, desc: '資料不足，無法判斷 RSI' };
+  if (r <= 30) return { score: 1, desc: `RSI=${r.toFixed(1)}，超賣區，可能反彈` };
+  if (r >= 70) return { score: -1, desc: `RSI=${r.toFixed(1)}，超買區，可能回落` };
+  const score = clamp(((r - 50) / 50) * 0.6, -1, 1);
+  const desc = r > 50 ? `RSI=${r.toFixed(1)}，偏多動能` : `RSI=${r.toFixed(1)}，偏空動能`;
+  return { score, desc };
+}
+
+function macdScore(closes) {
+  const { hist } = macd(closes);
+  const h = lastValid(hist);
+  const price = closes[closes.length - 1];
+  if (h == null || !price) return { score: 0, desc: '資料不足，無法判斷 MACD' };
+  const norm = (h / price) * 100;
+  const score = clamp(norm * 8, -1, 1);
+  const desc =
+    h > 0
+      ? `MACD 柱狀圖為正(${h.toFixed(4)})，動能偏多`
+      : `MACD 柱狀圖為負(${h.toFixed(4)})，動能偏空`;
+  return { score, desc };
+}
+
+function bbScore(closes) {
+  const { upper, lower } = bollinger(closes, 20, 2);
+  const u = lastValid(upper);
+  const l = lastValid(lower);
+  const price = closes[closes.length - 1];
+  if (u == null || l == null || u === l) return { score: 0, desc: '資料不足，無法判斷布林通道' };
+  const percentB = (price - l) / (u - l);
+  const score = clamp((percentB - 0.5) * 2, -1, 1);
+  let desc;
+  if (percentB > 0.8) desc = `價格接近布林上軌 (%B=${percentB.toFixed(2)})，動能強但留意過熱`;
+  else if (percentB < 0.2) desc = `價格接近布林下軌 (%B=${percentB.toFixed(2)})，可能超賣`;
+  else desc = `價格處於布林通道中間區間 (%B=${percentB.toFixed(2)})`;
+  return { score, desc };
+}
+
+function supportResistance(candles) {
+  const { highs, lows } = findPivots(candles, 3, 3);
+  const price = candles[candles.length - 1].close;
+  const resistances = highs.map((h) => h.price).filter((p) => p > price).sort((a, b) => a - b);
+  const supports = lows.map((l) => l.price).filter((p) => p < price).sort((a, b) => b - a);
+  const resistance = resistances[0] ?? null;
+  const support = supports[0] ?? null;
+  if (resistance == null && support == null) {
+    return { score: 0, desc: '樞紐點資料不足，無法判斷支撐壓力' };
+  }
+  let score = 0, desc = '';
+  if (resistance && (resistance - price) / price < 0.015) {
+    score = -0.5;
+    desc = `價格接近壓力位 ${resistance.toFixed(4)}，留意反壓`;
+  } else if (support && (price - support) / price < 0.015) {
+    score = 0.5;
+    desc = `價格接近支撐位 ${support.toFixed(4)}，留意反彈`;
+  } else if (!resistance) {
+    score = 1;
+    desc = '價格突破近期壓力區間，偏多';
+  } else if (!support) {
+    score = -1;
+    desc = '價格跌破近期支撐區間，偏空';
+  } else {
+    score = 0;
+    desc = `區間震盪：支撐 ${support.toFixed(4)} / 壓力 ${resistance.toFixed(4)}`;
+  }
+  return { score, desc, support, resistance };
+}
+
+function analyzeSMC(candles) {
+  const { highs, lows } = findPivots(candles, 3, 3);
+  if (highs.length < 2 || lows.length < 2) {
+    return { score: 0, desc: '樞紐點資料不足，無法判斷市場結構(SMC)' };
+  }
+  const lastTwoHighs = highs.slice(-2);
+  const lastTwoLows = lows.slice(-2);
+  const hh = lastTwoHighs[1].price > lastTwoHighs[0].price;
+  const hl = lastTwoLows[1].price > lastTwoLows[0].price;
+  const lh = lastTwoHighs[1].price < lastTwoHighs[0].price;
+  const ll = lastTwoLows[1].price < lastTwoLows[0].price;
+  const price = candles[candles.length - 1].close;
+  let structure = 'mixed', score = 0, desc = '';
+  if (hh && hl) {
+    structure = 'up'; score = 1;
+    desc = '結構呈現高點高、低點高(HH/HL)，多頭結構';
+  } else if (lh && ll) {
+    structure = 'down'; score = -1;
+    desc = '結構呈現高點低、低點低(LH/LL)，空頭結構';
+  } else {
+    desc = '市場結構混合，尚未明確方向';
+  }
+  const lastSwingLow = lastTwoLows[1].price;
+  const lastSwingHigh = lastTwoHighs[1].price;
+  if (structure === 'up' && price < lastSwingLow) {
+    score = -0.5;
+    desc += '；價格跌破前波低點，出現轉折訊號(CHoCH)';
+  } else if (structure === 'down' && price > lastSwingHigh) {
+    score = 0.5;
+    desc += '；價格突破前波高點，出現轉折訊號(CHoCH)';
+  } else if (structure === 'up' && price > lastSwingHigh) {
+    desc += '；價格延續創高(BOS)';
+  } else if (structure === 'down' && price < lastSwingLow) {
+    desc += '；價格延續破底(BOS)';
+  }
+  return { score, desc };
+}
+
+function scoreTimeframe(candles) {
+  const closes = candles.map((c) => c.close);
+  const ma = maScore(closes);
+  const r = rsiScore(closes);
+  const md = macdScore(closes);
+  const bb = bbScore(closes);
+  const snr = supportResistance(candles);
+  const smc = analyzeSMC(candles);
+
+  const indicators = [
+    { name: '均線交叉 (EMA20/50)', ...ma },
+    { name: 'RSI 相對強弱', ...r },
+    { name: 'MACD', ...md },
+    { name: '布林通道', ...bb },
+    { name: '支撐壓力 (SNR)', ...snr },
+    { name: '市場結構 (SMC)', ...smc },
+  ];
+
+  const scores = indicators.map((i) => i.score);
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+  let label, cls;
+  if (avg >= 0.5) { label = '強烈做多'; cls = 'strong-long'; }
+  else if (avg >= 0.15) { label = '做多'; cls = 'long'; }
+  else if (avg <= -0.5) { label = '強烈做空'; cls = 'strong-short'; }
+  else if (avg <= -0.15) { label = '做空'; cls = 'short'; }
+  else { label = '中性 / 觀望'; cls = 'neutral'; }
+
+  return { label, cls, avg, indicators };
+}
+
+// ===================== 資料抓取 =====================
+const COINS = [
+  { symbol: 'BTCUSDT', name: 'Bitcoin', ticker: 'BTC' },
+  { symbol: 'ETHUSDT', name: 'Ethereum', ticker: 'ETH' },
+  { symbol: 'SOLUSDT', name: 'Solana', ticker: 'SOL' },
+  { symbol: 'XRPUSDT', name: 'XRP', ticker: 'XRP' },
+  { symbol: 'DOGEUSDT', name: 'Dogecoin', ticker: 'DOGE' },
+];
+
+const TIMEFRAMES = [
+  { key: 'short', label: '短期', interval: '4h', limit: 150, note: '4小時K線・約數小時～數天的操作視角' },
+  { key: 'mid', label: '中期', interval: '1d', limit: 150, note: '日K線・約數天～數週的操作視角' },
+  { key: 'long', label: '長期', interval: '1w', limit: 150, note: '週K線・約數週～數月的操作視角' },
+];
+
+const API_BASE = 'https://api.binance.com/api/v3';
+
+async function fetchKlines(symbol, interval, limit) {
+  const url = `${API_BASE}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`K線資料取得失敗 (HTTP ${res.status})`);
+  const raw = await res.json();
+  return raw.map((d) => ({
+    openTime: d[0], open: +d[1], high: +d[2], low: +d[3], close: +d[4], volume: +d[5],
+  }));
+}
+
+async function fetchTicker(symbol) {
+  const url = `${API_BASE}/ticker/24hr?symbol=${symbol}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`即時價格取得失敗 (HTTP ${res.status})`);
+  const d = await res.json();
+  return { price: +d.lastPrice, changePct: +d.priceChangePercent };
+}
+
+function fmtPrice(p) {
+  if (p >= 100) return p.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (p >= 1) return p.toFixed(3);
+  return p.toFixed(5);
+}
+
+// ===================== UI 渲染 =====================
+function buildSkeleton() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  COINS.forEach((coin) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `card-${coin.ticker}`;
+    card.innerHTML = `
+      <div class="card-head">
+        <div>
+          <div class="coin-name">${coin.name}</div>
+          <div class="coin-ticker">${coin.ticker}/USDT</div>
+        </div>
+        <div class="price-block">
+          <div class="price" id="price-${coin.ticker}">--</div>
+          <div class="change" id="change-${coin.ticker}"></div>
+        </div>
+      </div>
+      <div id="body-${coin.ticker}"><div class="loading">載入中...</div></div>
+      <div class="card-footer">
+        <span>更新於：<span id="updated-${coin.ticker}">--</span></span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function renderIndicators(coin, results) {
+  const body = document.getElementById(`body-${coin.ticker}`);
+  const tabsHtml = TIMEFRAMES.map((tf, i) =>
+    `<button class="tab-btn ${i === 0 ? 'active' : ''}" data-tf="${tf.key}" data-ticker="${coin.ticker}">${tf.label}</button>`
+  ).join('');
+
+  const panelsHtml = TIMEFRAMES.map((tf, i) => {
+    const r = results[tf.key];
+    const markerPct = ((r.avg + 1) / 2) * 100;
+    const indicatorsHtml = r.indicators.map((ind) => {
+      const dotCls = ind.score > 0.1 ? 'pos' : ind.score < -0.1 ? 'neg' : 'flat';
+      return `<li><span class="ind-dot ${dotCls}"></span><span class="ind-name">${ind.name}</span><span class="ind-desc">${ind.desc}</span></li>`;
+    }).join('');
+    return `
+      <div class="tf-panel ${i === 0 ? 'active' : ''}" data-panel="${tf.key}" data-ticker="${coin.ticker}">
+        <div class="tf-note">${tf.note}</div>
+        <span class="badge ${r.cls}">${r.label}</span>
+        <div class="score-bar-track">
+          <div class="score-bar-fill"></div>
+          <div class="score-bar-marker" style="left:${markerPct}%"></div>
+        </div>
+        <ul class="indicator-list">${indicatorsHtml}</ul>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = `<div class="tabs">${tabsHtml}</div>${panelsHtml}`;
+
+  body.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ticker = btn.dataset.ticker;
+      const tf = btn.dataset.tf;
+      body.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      body.querySelectorAll('.tf-panel').forEach((p) =>
+        p.classList.toggle('active', p.dataset.panel === tf)
+      );
+    });
+  });
+}
+
+function renderError(coin, err) {
+  const body = document.getElementById(`body-${coin.ticker}`);
+  body.innerHTML = `<div class="error-box">資料載入失敗：${err.message || err}<br/>可能是網路問題或交易所API暫時無法存取，請點擊上方「立即重新整理」重試。</div>`;
+}
+
+async function loadCoin(coin) {
+  try {
+    const ticker = await fetchTicker(coin.symbol);
+    document.getElementById(`price-${coin.ticker}`).textContent = '$' + fmtPrice(ticker.price);
+    const changeEl = document.getElementById(`change-${coin.ticker}`);
+    const sign = ticker.changePct >= 0 ? '+' : '';
+    changeEl.textContent = `${sign}${ticker.changePct.toFixed(2)}% (24h)`;
+    changeEl.className = 'change ' + (ticker.changePct >= 0 ? 'up' : 'down');
+
+    const results = {};
+    for (const tf of TIMEFRAMES) {
+      const candles = await fetchKlines(coin.symbol, tf.interval, tf.limit);
+      results[tf.key] = scoreTimeframe(candles);
+    }
+    renderIndicators(coin, results);
+    document.getElementById(`updated-${coin.ticker}`).textContent =
+      new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  } catch (err) {
+    renderError(coin, err);
+  }
+}
+
+let countdownSeconds = 300;
+let countdownTimer = null;
+
+function startCountdown() {
+  clearInterval(countdownTimer);
+  countdownSeconds = 300;
+  countdownTimer = setInterval(() => {
+    countdownSeconds--;
+    if (countdownSeconds <= 0) {
+      loadAll();
+      countdownSeconds = 300;
+    }
+    const m = Math.floor(countdownSeconds / 60);
+    const s = countdownSeconds % 60;
+    document.getElementById('countdownText').textContent =
+      `下次自動更新：${m}分${s.toString().padStart(2, '0')}秒`;
+  }, 1000);
+}
+
+async function loadAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  document.getElementById('statusText').textContent = '更新中...';
+  await Promise.all(COINS.map((coin) => loadCoin(coin)));
+  document.getElementById('statusText').textContent =
+    '最後整體更新：' + new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  btn.disabled = false;
+  startCountdown();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadAll);
+
+buildSkeleton();
+loadAll();
+</script>
+
+</body>
+</html>
