@@ -131,6 +131,15 @@
   .dma-lines { list-style: disc; margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--text); }
   .dma-lines li { margin-bottom: 6px; }
 
+  .sig-stats {
+    background: #1a1e27; border: 1px solid #262b35; border-radius: 8px;
+    padding: 10px 12px; margin: 10px 0 4px; font-size: 12.5px;
+  }
+  .stat-title { font-weight: 600; margin-bottom: 8px; font-size: 12.5px; }
+  .stat-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .stat-row span:first-child { color: var(--text-dim); }
+  .stat-note { color: var(--text-dim); font-size: 11px; margin-top: 6px; }
+
   .chart-wrap {
     position: relative;
     width: 100%;
@@ -510,7 +519,7 @@ function fmtPnl(v) {
 
 function scanDualMASignals(candles) {
   const closes = candles.map((c) => c.close);
-  const res = { markers: [], open: null, exitRefs: null };
+  const res = { markers: [], open: null, exitRefs: null, trades: [] };
   if (closes.length < 130) return res;
   const e20a = ema(closes, 20), m20a = sma(closes, 20);
   const e60a = ema(closes, 60), e120a = ema(closes, 120);
@@ -534,12 +543,14 @@ function scanDualMASignals(candles) {
       if (c < m20a[i]) {
         const pnl = c - pos.price;
         res.markers.push({ time: t(i), position: 'aboveBar', color: '#e040fb', shape: 'arrowDown', text: `多單出場 ${pnl >= 0 ? '+' : ''}${fmtPnl(pnl)}` });
+        res.trades.push({ side: 'long', entry: pos.price, exit: c, pnl, pct: (pnl / pos.price) * 100 });
         pos = null;
       }
     } else if (pos.side === 'short') {
       if (c > m20a[i]) {
         const pnl = pos.price - c;
         res.markers.push({ time: t(i), position: 'belowBar', color: '#e040fb', shape: 'arrowUp', text: `空單出場 ${pnl >= 0 ? '+' : ''}${fmtPnl(pnl)}` });
+        res.trades.push({ side: 'short', entry: pos.price, exit: c, pnl, pct: (pnl / pos.price) * 100 });
         pos = null;
       }
     }
@@ -991,6 +1002,33 @@ function renderSignalPanel(result, tf) {
     return `<li><span class="ind-dot ${dotCls}"></span><span class="ind-name">${ind.name}</span><span class="ind-desc">${ind.desc}</span></li>`;
   }).join('');
   const dma = result.dma;
+  let statsHtml = '';
+  const sigStats = state.signals;
+  if (sigStats && sigStats.trades) {
+    const trades = sigStats.trades;
+    const n = trades.length;
+    const wins = trades.filter((tr) => tr.pnl > 0).length;
+    const totalPnl = trades.reduce((a, tr) => a + tr.pnl, 0);
+    const totalPct = trades.reduce((a, tr) => a + tr.pct, 0);
+    const pnlCls = totalPnl >= 0 ? 'up' : 'down';
+    let floatHtml = '';
+    if (sigStats.open && state.candles.length) {
+      const o = sigStats.open;
+      const last = state.candles[state.candles.length - 1].close;
+      const fpnl = o.side === 'long' ? last - o.price : o.price - last;
+      const fpct = (fpnl / o.price) * 100;
+      const fCls = fpnl >= 0 ? 'up' : 'down';
+      floatHtml = `<div class="stat-row"><span>未平倉浮動盈虧</span><span class="change ${fCls}">${fpnl >= 0 ? '+' : ''}${fmtPnl(fpnl)}（${fpnl >= 0 ? '+' : ''}${fpct.toFixed(2)}%）</span></div>`;
+    }
+    statsHtml = `
+      <div class="sig-stats">
+        <div class="stat-title">📈 此時間級別訊號回測統計（近 ${state.candles.length} 根K棒）</div>
+        <div class="stat-row"><span>已平倉交易</span><span>${n} 筆（勝 ${wins}／敗 ${n - wins}${n ? '，勝率 ' + ((wins / n) * 100).toFixed(0) + '%' : ''}）</span></div>
+        <div class="stat-row"><span>已平倉總盈虧</span><span class="change ${pnlCls}">${totalPnl >= 0 ? '+' : ''}${fmtPnl(totalPnl)}（${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(2)}%）</span></div>
+        ${floatHtml}
+        <div class="stat-note">※ 以每筆 1 顆、收盤價進出計算，僅供邏輯驗證參考</div>
+      </div>`;
+  }
   let posHtml = '';
   const sig = state.signals;
   if (sig && sig.open && sig.exitRefs) {
@@ -1006,6 +1044,7 @@ function renderSignalPanel(result, tf) {
     <div class="dma-box">
       <div class="dma-title">〰 雙均線系統（MA/EMA 20・60・120）</div>
       <span class="badge ${dma.dirCls}">可能方向：${dma.direction}</span>
+      ${statsHtml}
       <ul class="dma-lines">${dma.lines.map((l) => `<li>${l}</li>`).join('')}${posHtml}</ul>
     </div>` : '';
   panel.innerHTML = `
