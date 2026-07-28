@@ -243,11 +243,12 @@
       <button class="tool-btn" id="fvgToolBtn" title="顯示 Fair Value Gap（失衡缺口）">▭ FVG</button>
       <button class="tool-btn" id="bbToolBtn" title="布林帶(20,2)：中軌＝20期SMA，上軌＝中軌+2倍標準差，下軌＝中軌−2倍標準差">📊 布林帶</button>
       <button class="tool-btn" id="dmaToolBtn" title="雙均線系統：MA 與 EMA 各 20/60/120，共六條線">〰 雙均線</button>
+      <button class="tool-btn" id="sigToolBtn" title="依雙均線系統掃描歷史K棒，標出進出場位置與損益；若有未平倉訊號，另以虛線標出建議出場價位">🎯 訊號標記</button>
       <span class="tool-hint" id="toolHint"></span>
     </div>
     <div class="ma-legend" id="maLegend" style="display:none">
-      <span><i style="background:#9aa0a6"></i>EMA20（灰）</span>
-      <span><i style="background:#D3D3D3"></i>MA20（淺灰）</span>
+      <span><i style="background:#FFD700"></i>EMA20（黃）</span>
+      <span><i style="background:#FFF0A3"></i>MA20（淺黃）</span>
       <span><i style="background:#f23645"></i>EMA60（紅）</span>
       <span><i style="background:#FDBCB4"></i>MA60（淺紅）</span>
       <span><i style="background:#2979FF"></i>EMA120（藍）</span>
@@ -267,7 +268,7 @@
 <footer>
   資料來源：Binance 公開行情 API（klines / 24hr ticker）｜ 可選週期：1分鐘・5分鐘・15分鐘・1小時・4小時・1天・1週<br/>
   指標：EMA20/50 均線交叉、RSI(14)、MACD(12,26,9)、布林通道(20,2)、支撐壓力位(SNR)、簡化版市場結構(SMC：HH/HL、LH/LL、BOS/CHoCH)<br/>
-  圖表工具：Fibonacci 回撤（點選起點＝1、終點＝0，另含往下延伸的擴展位 1.382 / 1.618）、Fair Value Gap（自動偵測三根K棒失衡缺口，未回補會持續延伸）、布林帶(20,2)、雙均線系統（MA/EMA 20・60・120 共六條線）<br/>
+  圖表工具：Fibonacci 回撤（點選起點＝1、終點＝0，另含往下延伸的擴展位 1.382 / 1.618）、Fair Value Gap（自動偵測三根K棒失衡缺口，未回補會持續延伸）、布林帶(20,2)、雙均線系統（MA/EMA 20・60・120 共六條線）、訊號標記（雙均線系統歷史進出場點＋損益＋未平倉建議出場價位線）<br/>
   切換上方週期選單會同時改變K線圖與技術指標分析週期。自動每 5 分鐘重新整理一次資料。
 </footer>
 
@@ -495,6 +496,61 @@ function analyzeDualMA(closes) {
   return { score, direction, dirCls, lines };
 }
 
+// ===================== 雙均線進出場訊號掃描（逐K棒回放） =====================
+// 進場：多頭背景(EMA60>EMA120) + 收盤價向上突破 EMA20 且 EMA20 拐頭向上 → 做多
+//       空頭背景(EMA60<EMA120) + 收盤價向下跌破 EMA20 且 EMA20 拐頭向下 → 做空
+// 出場：多單收盤跌破 MA20 出場；空單收盤突破 MA20 出場（同側 EMA20 為減倉參考）
+function fmtPnl(v) {
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(1);
+  if (a >= 1) return v.toFixed(2);
+  if (a >= 0.01) return v.toFixed(4);
+  return v.toFixed(6);
+}
+
+function scanDualMASignals(candles) {
+  const closes = candles.map((c) => c.close);
+  const res = { markers: [], open: null, exitRefs: null };
+  if (closes.length < 130) return res;
+  const e20a = ema(closes, 20), m20a = sma(closes, 20);
+  const e60a = ema(closes, 60), e120a = ema(closes, 120);
+  const t = (i) => Math.floor(candles[i].openTime / 1000);
+  let pos = null;
+  for (let i = 125; i < closes.length; i++) {
+    if (e20a[i] == null || m20a[i] == null || e60a[i] == null || e120a[i] == null) continue;
+    const c = closes[i];
+    const e20up = e20a[i] > e20a[i - 1];
+    const bullBg = e60a[i] > e120a[i];
+    const bearBg = e60a[i] < e120a[i];
+    if (!pos) {
+      if (bullBg && c > e20a[i] && e20up && closes[i - 1] <= e20a[i - 1]) {
+        pos = { side: 'long', price: c, idx: i };
+        res.markers.push({ time: t(i), position: 'belowBar', color: '#16c784', shape: 'arrowUp', text: '做多 (Buy)' });
+      } else if (bearBg && c < e20a[i] && !e20up && closes[i - 1] >= e20a[i - 1]) {
+        pos = { side: 'short', price: c, idx: i };
+        res.markers.push({ time: t(i), position: 'aboveBar', color: '#ea3943', shape: 'arrowDown', text: '做空 (Sell)' });
+      }
+    } else if (pos.side === 'long') {
+      if (c < m20a[i]) {
+        const pnl = c - pos.price;
+        res.markers.push({ time: t(i), position: 'aboveBar', color: '#e040fb', shape: 'arrowDown', text: `多單出場 ${pnl >= 0 ? '+' : ''}${fmtPnl(pnl)}` });
+        pos = null;
+      }
+    } else if (pos.side === 'short') {
+      if (c > m20a[i]) {
+        const pnl = pos.price - c;
+        res.markers.push({ time: t(i), position: 'belowBar', color: '#e040fb', shape: 'arrowUp', text: `空單出場 ${pnl >= 0 ? '+' : ''}${fmtPnl(pnl)}` });
+        pos = null;
+      }
+    }
+  }
+  if (pos) {
+    res.open = pos;
+    res.exitRefs = { e20: e20a[e20a.length - 1], m20: m20a[m20a.length - 1] };
+  }
+  return res;
+}
+
 function supportResistance(candles) {
   const { highs, lows } = findPivots(candles, 3, 3);
   const price = candles[candles.length - 1].close;
@@ -671,17 +727,20 @@ const state = {
   fvgVisible: false,
   bbVisible: false,
   dmaVisible: false,
+  sigVisible: false,
+  signals: { markers: [], open: null, exitRefs: null },
   fib: { status: 'idle', a: null, b: null }, // idle | arm1 | arm2 | drawn
 };
 
 let chart, series;
 let bbSeries = null;   // { upper, mid, lower }
 let dmaSeries = null;  // [{key, calc, period, series}]
+let sigPriceLines = []; // 未平倉建議出場價位線
 
 // 雙均線設定：EMA 深色實線較粗、MA 同色系淺色較細（參考影片配置）
 const DMA_DEFS = [
-  { key: 'ema20',  type: 'ema', period: 20,  color: '#9aa0a6', width: 2 },
-  { key: 'ma20',   type: 'sma', period: 20,  color: '#D3D3D3', width: 1 },
+  { key: 'ema20',  type: 'ema', period: 20,  color: '#FFD700', width: 2 },
+  { key: 'ma20',   type: 'sma', period: 20,  color: '#FFF0A3', width: 1 },
   { key: 'ema60',  type: 'ema', period: 60,  color: '#f23645', width: 2 },
   { key: 'ma60',   type: 'sma', period: 60,  color: '#FDBCB4', width: 1 },
   { key: 'ema120', type: 'ema', period: 120, color: '#2979FF', width: 2 },
@@ -850,6 +909,27 @@ function applyIndicatorVisibility() {
   document.getElementById('maLegend').style.display = state.dmaVisible ? 'flex' : 'none';
 }
 
+function applySignalMarkers() {
+  series.setMarkers(state.sigVisible ? state.signals.markers : []);
+  sigPriceLines.forEach((pl) => series.removePriceLine(pl));
+  sigPriceLines = [];
+  if (state.sigVisible && state.signals.open && state.signals.exitRefs) {
+    const o = state.signals.open;
+    const refs = state.signals.exitRefs;
+    const sideLabel = o.side === 'long' ? '多單' : '空單';
+    sigPriceLines.push(series.createPriceLine({
+      price: refs.e20, color: '#ff9800', lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+      title: `${sideLabel}減倉參考 (EMA20)`,
+    }));
+    sigPriceLines.push(series.createPriceLine({
+      price: refs.m20, color: '#e040fb', lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+      title: `${sideLabel}建議出場 (MA20)`,
+    }));
+  }
+}
+
 function resetFib() {
   state.fib = { status: 'idle', a: null, b: null };
   document.getElementById('fibToolBtn').classList.remove('active');
@@ -886,6 +966,12 @@ function initToolButtons() {
     dmaBtn.classList.toggle('active', state.dmaVisible);
     applyIndicatorVisibility();
   });
+  const sigBtn = document.getElementById('sigToolBtn');
+  sigBtn.addEventListener('click', () => {
+    state.sigVisible = !state.sigVisible;
+    sigBtn.classList.toggle('active', state.sigVisible);
+    applySignalMarkers();
+  });
 }
 
 function updatePriceHeader(ticker) {
@@ -905,11 +991,22 @@ function renderSignalPanel(result, tf) {
     return `<li><span class="ind-dot ${dotCls}"></span><span class="ind-name">${ind.name}</span><span class="ind-desc">${ind.desc}</span></li>`;
   }).join('');
   const dma = result.dma;
+  let posHtml = '';
+  const sig = state.signals;
+  if (sig && sig.open && sig.exitRefs) {
+    const o = sig.open;
+    const sideLabel = o.side === 'long' ? '多單' : '空單';
+    const exitCond = o.side === 'long' ? '收盤跌破 MA20' : '收盤突破 MA20';
+    const trimCond = o.side === 'long' ? '跌破 EMA20 先減倉' : '突破 EMA20 先減倉';
+    posHtml = `<li>目前訊號持倉：<b>${sideLabel}</b>（進場價 ${fmtPnl(o.price)}）。建議出場：${exitCond}（≈ ${fmtPnl(sig.exitRefs.m20)}），${trimCond}（≈ ${fmtPnl(sig.exitRefs.e20)}）。開啟「🎯 訊號標記」可在圖上看到進場點與出場價位線</li>`;
+  } else if (sig) {
+    posHtml = `<li>目前無未平倉訊號：等待下一次進場條件成立（開啟「🎯 訊號標記」可回看歷史進出場點與損益）</li>`;
+  }
   const dmaHtml = dma ? `
     <div class="dma-box">
       <div class="dma-title">〰 雙均線系統（MA/EMA 20・60・120）</div>
       <span class="badge ${dma.dirCls}">可能方向：${dma.direction}</span>
-      <ul class="dma-lines">${dma.lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+      <ul class="dma-lines">${dma.lines.map((l) => `<li>${l}</li>`).join('')}${posHtml}</ul>
     </div>` : '';
   panel.innerHTML = `
     <div class="tf-note">${tf.note}</div>
@@ -948,6 +1045,8 @@ async function loadCurrent() {
     series.setData(chartData);
     updateIndicatorSeries(candles);
     applyIndicatorVisibility();
+    state.signals = scanDualMASignals(candles);
+    applySignalMarkers();
     chart.timeScale().fitContent();
 
     const result = scoreTimeframe(candles);
